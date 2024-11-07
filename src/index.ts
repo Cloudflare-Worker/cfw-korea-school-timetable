@@ -1,7 +1,4 @@
-//@ts-ignore
-const hasValidHeader = (request, env) => {
-	return request.headers.get("X-Custom-Auth-Key") === env.AUTH_KEY_SECRET;
-  };
+import { School, Weekday } from "comcigan.ts";
 
 //@ts-ignore
 function handleCors(request) {
@@ -12,67 +9,52 @@ function handleCors(request) {
 	return headers;
 }
 
-//@ts-ignore
-function authorizeRequest(request, env) {
-	switch (request.method) {
-	  case "PUT":
-	  case "DELETE":
-		return hasValidHeader(request, env);
-	  case "GET":
-		return false;
-	  default:
-		return false;
-	};
-};
-
 export default {
 	async fetch(request, env) {
-	  const key = crypto.randomUUID();
-
-	  if (request.method === "OPTIONS") {
-		return new Response(null, {
-		  status: 204,
-		  headers: handleCors(request),
-		});
-	  }
-
-	  if (!authorizeRequest(request, env)) {
-		return new Response("Forbidden", { status: 403, headers: handleCors(request) });
-	  }
-  
 	  switch (request.method) {
-		case "PUT":
-			const contentLength = request.headers.get("Content-Length");
-			if (contentLength && parseInt(contentLength) > 25 * 1024 * 1024) {
-				return new Response("Payload Too Large", { status: 413, headers: handleCors(request) });
-			}
-		  await env.MY_BUCKET.put(key, request.body);
-		  return new Response(JSON.stringify({ 
-			"status": "success",
-			"key": key,
-			"download_url": `https://file.kmhs.info/${key}`
-		   }), { headers: handleCors(request) });
+		case "OPTIONS":
+			return new Response(null, {
+				status: 204,
+				headers: handleCors(request),
+			});
 		case "GET":
-		  const object = await env.MY_BUCKET.get(key);
+		const url = new URL(request.url);
+		const schoolName = url.searchParams.get('schoolName');
+		const grade = parseInt(url.searchParams.get('grade') || '0');
+		const classNum = parseInt(url.searchParams.get('classNum') || '0');
 
-		  if (object === null) {
-			return new Response("Object Not Found", { status: 404, headers: handleCors(request) });
-		  }
-  
-		  const headers = handleCors(request);
-		  object.writeHttpMetadata(headers);
-		  headers.set("etag", object.httpEtag);
-  
-		  return new Response(object.body, {
-			headers: headers,
-		  });
+		if (!grade || !classNum || !schoolName) {
+			return new Response('Invalid grade or classNum, schoolName', {
+				status: 400,
+				headers: handleCors(request),
+			});
+		}
+
+		try {
+			const school = await School.fromName(schoolName);
+			const weekdays = [Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday];
+			const timetable: { [key: string]: any } = {};
+	
+			for (const day of weekdays) {
+				timetable[Weekday[day]] = await school.getTimetable(grade, classNum, day);
+			}
+	
+			return new Response(JSON.stringify(timetable), {
+				headers: handleCors(request),
+			});
+		} catch (error) {
+			return new Response('Error fetching timetable', {
+				status: 500,
+				headers: handleCors(request),
+			});
+		}
 
 		default:
 		  return new Response("Method Not Allowed", {
 			status: 405,
 			headers: {
 			  ...handleCors(request),
-			  Allow: "PUT, GET",
+			  Allow: "GET",
 			},
 		  });
 	  }
