@@ -1,6 +1,4 @@
-import pkg from 'comcigan.ts';
-// @ts-ignore
-const { School, Weekday } = pkg;
+import { School, Weekday } from 'comcigan.ts'
 
 //@ts-ignore
 function handleCors(request) {
